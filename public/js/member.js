@@ -199,6 +199,9 @@ async function loadPage(page) {
       case 'simpanan':
         await renderSimpanan();
         break;
+      case 'tagihan':
+        await renderTagihan();
+        break;
       case 'bayar-simpanan':
         await renderBayarSimpanan();
         break;
@@ -232,6 +235,14 @@ async function renderDashboard() {
   console.log('Loading dashboard for member:', memberData.id);
   
   try {
+    // Get tagihan info for alert
+    let tagihanInfo = null;
+    try {
+      tagihanInfo = await API.get('/api/member/tagihan-simpanan-wajib');
+    } catch (e) {
+      console.error('Error loading tagihan:', e);
+    }
+    
     // Get simpanan data with error handling
     let simpananPokok = [];
     let simpananWajib = [];
@@ -362,6 +373,23 @@ async function renderDashboard() {
       <i data-feather="home" style="width: 28px; height: 28px; color: var(--member-primary);"></i>
       Dashboard Saya
     </h2>
+    
+    ${tagihanInfo && tagihanInfo.ringkasan.sisa_tagihan > 0 ? `
+    <div style="background:#FFEBEE; border:1px solid #FFCDD2; border-radius:10px; padding:14px 18px; margin-bottom:20px; display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+      <i data-feather="alert-circle" style="color:#d32f2f; flex-shrink:0;"></i>
+      <div style="flex:1; min-width:200px;">
+        <strong style="color:#d32f2f;">Tunggakan Simpanan Wajib</strong>
+        <div style="font-size:13px; color:#666; margin-top:2px;">
+          ${tagihanInfo.ringkasan.bulan_belum_bayar} bulan belum terbayar · 
+          Total: <strong>${new Intl.NumberFormat('id-ID', {style:'currency', currency:'IDR', minimumFractionDigits:0}).format(tagihanInfo.ringkasan.sisa_tagihan)}</strong>
+        </div>
+      </div>
+      <button onclick="loadPage('tagihan')" 
+        style="background:#d32f2f; color:#fff; border:none; padding:8px 16px; border-radius:8px; cursor:pointer; font-size:13px; white-space:nowrap;">
+        Lihat Tagihan
+      </button>
+    </div>
+    ` : ''}
     
     <div class="dashboard-grid">
       <div class="stat-card-member success">
@@ -1421,6 +1449,135 @@ window.updateLaporanMember = async function() {
     feather.replace();
   }
 };
+
+// ===== RENDER TAGIHAN SIMPANAN WAJIB =====
+async function renderTagihan() {
+  const content = document.getElementById('memberContent');
+  
+  try {
+    const data = await API.get('/api/member/tagihan-simpanan-wajib');
+    const { anggota, ringkasan, daftar_bulan } = data;
+    
+    const formatCurrency = (amount) => new Intl.NumberFormat('id-ID', {
+      style: 'currency', currency: 'IDR', minimumFractionDigits: 0
+    }).format(amount);
+    
+    const statusColor = ringkasan.status === 'lunas' ? '#2E7D32' : '#d32f2f';
+    const statusLabel = ringkasan.status === 'lunas' ? '✅ Lunas' : '⚠️ Ada Tunggakan';
+    
+    // Render daftar bulan (terbaru di atas)
+    const bulanRows = [...daftar_bulan].reverse().map(b => {
+      const statusMap = {
+        lunas: { label: 'Lunas', color: '#2E7D32', bg: '#E8F5E9' },
+        kurang: { label: 'Kurang Bayar', color: '#F57C00', bg: '#FFF3E0' },
+        belum_bayar: { label: 'Belum Bayar', color: '#d32f2f', bg: '#FFEBEE' }
+      };
+      const s = statusMap[b.status];
+      return `
+        <tr>
+          <td>${b.label}</td>
+          <td>${formatCurrency(b.tagihan)}</td>
+          <td>
+            <span style="background:${s.bg}; color:${s.color}; padding:3px 10px; border-radius:12px; font-size:12px; font-weight:600;">
+              ${s.label}
+            </span>
+          </td>
+        </tr>`;
+    }).join('');
+    
+    content.innerHTML = `
+      <div class="member-section">
+        <h2 style="margin-bottom:20px; color:#2E7D32;">
+          <i data-feather="file-minus"></i> Tagihan Simpanan Wajib
+        </h2>
+        
+        <!-- Ringkasan -->
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:16px; margin-bottom:24px;">
+          <div style="background:#fff; border-radius:12px; padding:16px; box-shadow:0 2px 8px rgba(0,0,0,0.08); border-left:4px solid #2E7D32;">
+            <div style="font-size:12px; color:#666; margin-bottom:4px;">Iuran Per Bulan</div>
+            <div style="font-size:20px; font-weight:700; color:#2E7D32;">${formatCurrency(ringkasan.simpanan_per_bulan)}</div>
+          </div>
+          <div style="background:#fff; border-radius:12px; padding:16px; box-shadow:0 2px 8px rgba(0,0,0,0.08); border-left:4px solid #1565C0;">
+            <div style="font-size:12px; color:#666; margin-bottom:4px;">Total Tagihan</div>
+            <div style="font-size:20px; font-weight:700; color:#1565C0;">${formatCurrency(ringkasan.total_tagihan)}</div>
+            <div style="font-size:11px; color:#999;">${ringkasan.total_bulan} bulan sejak bergabung</div>
+          </div>
+          <div style="background:#fff; border-radius:12px; padding:16px; box-shadow:0 2px 8px rgba(0,0,0,0.08); border-left:4px solid #2E7D32;">
+            <div style="font-size:12px; color:#666; margin-bottom:4px;">Sudah Dibayar</div>
+            <div style="font-size:20px; font-weight:700; color:#2E7D32;">${formatCurrency(ringkasan.total_bayar)}</div>
+            <div style="font-size:11px; color:#999;">${ringkasan.bulan_terbayar} bulan terbayar</div>
+          </div>
+          <div style="background:#fff; border-radius:12px; padding:16px; box-shadow:0 2px 8px rgba(0,0,0,0.08); border-left:4px solid ${statusColor};">
+            <div style="font-size:12px; color:#666; margin-bottom:4px;">Sisa Tagihan</div>
+            <div style="font-size:20px; font-weight:700; color:${statusColor};">${formatCurrency(ringkasan.sisa_tagihan)}</div>
+            <div style="font-size:11px; color:${statusColor}; font-weight:600;">${statusLabel}</div>
+          </div>
+        </div>
+        
+        ${ringkasan.sisa_tagihan > 0 ? `
+        <!-- Alert Tunggakan -->
+        <div style="background:#FFEBEE; border:1px solid #FFCDD2; border-radius:10px; padding:16px; margin-bottom:20px; display:flex; align-items:center; gap:12px;">
+          <i data-feather="alert-circle" style="color:#d32f2f; flex-shrink:0;"></i>
+          <div>
+            <strong style="color:#d32f2f;">Anda memiliki tunggakan ${ringkasan.bulan_belum_bayar} bulan</strong>
+            <div style="font-size:13px; color:#666; margin-top:4px;">
+              Total tunggakan: <strong>${formatCurrency(ringkasan.sisa_tagihan)}</strong>. 
+              Segera lakukan pembayaran melalui menu <strong>Bayar Simpanan</strong>.
+            </div>
+          </div>
+          <button onclick="loadPage('bayar-simpanan')" 
+            style="margin-left:auto; background:#d32f2f; color:#fff; border:none; padding:8px 16px; border-radius:8px; cursor:pointer; font-size:13px; white-space:nowrap; flex-shrink:0;">
+            Bayar Sekarang
+          </button>
+        </div>
+        ` : `
+        <!-- Lunas -->
+        <div style="background:#E8F5E9; border:1px solid #C8E6C9; border-radius:10px; padding:16px; margin-bottom:20px; display:flex; align-items:center; gap:12px;">
+          <i data-feather="check-circle" style="color:#2E7D32; flex-shrink:0;"></i>
+          <div>
+            <strong style="color:#2E7D32;">Simpanan wajib Anda sudah lunas!</strong>
+            <div style="font-size:13px; color:#666; margin-top:4px;">Terima kasih atas kepatuhan Anda dalam membayar simpanan wajib.</div>
+          </div>
+        </div>
+        `}
+        
+        <!-- Tabel Detail Per Bulan -->
+        <div style="background:#fff; border-radius:12px; box-shadow:0 2px 8px rgba(0,0,0,0.08); overflow:hidden;">
+          <div style="padding:16px 20px; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center;">
+            <h3 style="margin:0; font-size:15px;">Detail Tagihan Per Bulan</h3>
+            <span style="font-size:12px; color:#666;">Bergabung: ${new Date(anggota.tanggal_bergabung).toLocaleDateString('id-ID', {day:'numeric', month:'long', year:'numeric'})}</span>
+          </div>
+          <div style="overflow-x:auto;">
+            <table style="width:100%; border-collapse:collapse;">
+              <thead>
+                <tr style="background:#F5F5F5;">
+                  <th style="padding:12px 16px; text-align:left; font-size:13px; color:#555;">Bulan</th>
+                  <th style="padding:12px 16px; text-align:left; font-size:13px; color:#555;">Tagihan</th>
+                  <th style="padding:12px 16px; text-align:left; font-size:13px; color:#555;">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${bulanRows}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    `;
+    
+    feather.replace();
+    
+  } catch (error) {
+    console.error('Error loading tagihan:', error);
+    content.innerHTML = `
+      <div class="empty-state">
+        <i data-feather="alert-circle"></i>
+        <h3>Gagal memuat tagihan</h3>
+        <p>${error.message}</p>
+      </div>`;
+    feather.replace();
+  }
+}
 
 // Render Simpanan
 async function renderSimpanan() {

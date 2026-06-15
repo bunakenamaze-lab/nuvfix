@@ -1202,11 +1202,23 @@ app.get('/api/transaksi/penjualan', authenticateToken, (req, res) => {
 
 app.post('/api/transaksi/penjualan', authenticateToken, (req, res) => {
   const { unit_usaha_id, tanggal_transaksi, jumlah_penjualan, hpp, keterangan } = req.body;
+  
+  console.log('📊 Import penjualan request:');
+  console.log('  - unit_usaha_id:', unit_usaha_id);
+  console.log('  - tanggal_transaksi:', tanggal_transaksi);
+  console.log('  - jumlah_penjualan:', jumlah_penjualan);
+  console.log('  - hpp:', hpp);
+  console.log('  - keterangan:', keterangan);
+  
   const keuntungan = jumlah_penjualan - (hpp || 0);
   
   // Get unit usaha name for activity log
   if (unit_usaha_id) {
     db.get('SELECT nama_usaha FROM unit_usaha WHERE id = ?', [unit_usaha_id], (err, unitUsaha) => {
+      if (err) {
+        console.error('❌ Error getting unit usaha:', err);
+        return res.status(500).json({ error: err.message });
+      }
       insertPenjualan(unitUsaha ? unitUsaha.nama_usaha : null);
     });
   } else {
@@ -1217,7 +1229,12 @@ app.post('/api/transaksi/penjualan', authenticateToken, (req, res) => {
     db.run('INSERT INTO transaksi_penjualan (unit_usaha_id, tanggal_transaksi, jumlah_penjualan, hpp, keuntungan, keterangan) VALUES (?, ?, ?, ?, ?, ?)',
       [unit_usaha_id, tanggal_transaksi, jumlah_penjualan, hpp, keuntungan, keterangan],
       function(err) {
-      if (err) return res.status(500).json({ error: err.message });
+      if (err) {
+        console.error('❌ Error inserting penjualan:', err);
+        return res.status(500).json({ error: err.message });
+      }
+      
+      console.log('✅ Penjualan inserted, ID:', this.lastID);
       
       // Log activity
       const formatCurrency = (amount) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(amount);

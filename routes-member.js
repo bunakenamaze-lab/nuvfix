@@ -296,4 +296,94 @@ function authenticateMember(req, res, next) {
   }
 }
 
+// ===== TAGIHAN SIMPANAN WAJIB =====
+const SIMPANAN_WAJIB_PER_BULAN = parseInt(process.env.SIMPANAN_WAJIB_PER_BULAN) || 30000;
+
+// Get tagihan simpanan wajib member
+router.get('/tagihan-simpanan-wajib', authenticateMember, (req, res) => {
+  const anggotaId = req.user.anggota_id;
+
+  // Get member data (tanggal bergabung)
+  db.get('SELECT id, nama_lengkap, nomor_anggota, tanggal_bergabung FROM anggota WHERE id = ?', [anggotaId], (err, anggota) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (!anggota) return res.status(404).json({ error: 'Anggota tidak ditemukan' });
+
+    const tanggalBergabung = new Date(anggota.tanggal_bergabung);
+    const sekarang = new Date();
+
+    // Hitung total bulan sejak bergabung (inklusif bulan bergabung)
+    const totalBulan =
+      (sekarang.getFullYear() - tanggalBergabung.getFullYear()) * 12 +
+      (sekarang.getMonth() - tanggalBergabung.getMonth()) + 1;
+
+    const totalTagihan = totalBulan * SIMPANAN_WAJIB_PER_BULAN;
+
+    // Get total yang sudah dibayar
+    db.get(
+      `SELECT COALESCE(SUM(jumlah), 0) as total_bayar 
+       FROM simpanan_wajib 
+       WHERE anggota_id = ? AND (status = 'approved' OR status IS NULL)`,
+      [anggotaId],
+      (err, bayar) => {
+        if (err) return res.status(500).json({ error: err.message });
+
+        const totalBayar = bayar.total_bayar || 0;
+        const sisaTagihan = Math.max(0, totalTagihan - totalBayar);
+        const bulanTerbayar = Math.floor(totalBayar / SIMPANAN_WAJIB_PER_BULAN);
+        const bulanBelumBayar = Math.max(0, totalBulan - bulanTerbayar);
+
+        // Generate daftar bulan tagihan
+        const daftarBulan = [];
+        let saldoBerjalan = totalBayar;
+
+        for (let i = 0; i < totalBulan; i++) {
+          const bulan = new Date(tanggalBergabung);
+          bulan.setMonth(bulan.getMonth() + i);
+
+          const tagihan = SIMPANAN_WAJIB_PER_BULAN;
+          let statusBulan;
+
+          if (saldoBerjalan >= tagihan) {
+            statusBulan = 'lunas';
+            saldoBerjalan -= tagihan;
+          } else if (saldoBerjalan > 0) {
+            statusBulan = 'kurang';
+            saldoBerjalan = 0;
+          } else {
+            statusBulan = 'belum_bayar';
+          }
+
+          daftarBulan.push({
+            bulan: bulan.getMonth() + 1,
+            tahun: bulan.getFullYear(),
+            label: bulan.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' }),
+            tagihan,
+            status: statusBulan
+          });
+        }
+
+        res.json({
+          anggota: {
+            id: anggota.id,
+            nama_lengkap: anggota.nama_lengkap,
+            nomor_anggota: anggota.nomor_anggota,
+            tanggal_bergabung: anggota.tanggal_bergabung
+          },
+          ringkasan: {
+            total_bulan: totalBulan,
+            total_tagihan: totalTagihan,
+            total_bayar: totalBayar,
+            sisa_tagihan: sisaTagihan,
+            bulan_terbayar: bulanTerbayar,
+            bulan_belum_bayar: bulanBelumBayar,
+            simpanan_per_bulan: SIMPANAN_WAJIB_PER_BULAN,
+            status: sisaTagihan === 0 ? 'lunas' : 'ada_tunggakan'
+          },
+          daftar_bulan: daftarBulan
+        });
+      }
+    );
+  });
+});
+
 module.exports = router;
