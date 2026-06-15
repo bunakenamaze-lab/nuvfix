@@ -81,13 +81,14 @@ app.use((req, res, next) => {
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
-app.use(express.static('public'));
-app.use('/uploads', express.static(UPLOAD_PATH));
 
-// Redirect root ke landing page
+// Redirect root ke landing page — HARUS sebelum express.static
 app.get('/', (req, res) => {
   res.redirect('/landing.html');
 });
+
+app.use(express.static('public'));
+app.use('/uploads', express.static(UPLOAD_PATH));
 
 app.use(session({
   secret: SECRET_KEY,
