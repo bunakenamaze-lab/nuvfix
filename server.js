@@ -79,10 +79,15 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(express.json({ limit: '50mb' })); // Increase limit for large payloads
-app.use(express.urlencoded({ extended: true, limit: '50mb' })); // Increase limit for form data
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(express.static('public'));
-app.use('/uploads', express.static(UPLOAD_PATH)); // Serve uploads from absolute path
+app.use('/uploads', express.static(UPLOAD_PATH));
+
+// Redirect root ke landing page
+app.get('/', (req, res) => {
+  res.redirect('/landing.html');
+});
 
 app.use(session({
   secret: SECRET_KEY,
