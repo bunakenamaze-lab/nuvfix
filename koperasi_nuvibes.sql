@@ -1,17 +1,19 @@
 -- ============================================================
 -- DATABASE: Koperasi NU Vibes
--- Konversi dari SQLite ke MySQL
--- Import via phpMyAdmin
+-- Import via phpMyAdmin (Shared Hosting / cPanel)
+--
+-- CARA IMPORT:
+-- 1. Buat database dulu di cPanel > MySQL Databases
+--    Nama database: u167347310_nuvibes26 (atau sesuai cPanel)
+-- 2. Buat user MySQL dan assign ke database tersebut
+-- 3. Buka phpMyAdmin > pilih database yang sudah dibuat
+-- 4. Klik Import > pilih file ini > Go
 -- ============================================================
 
 SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
 SET time_zone = "+07:00";
-
-CREATE DATABASE IF NOT EXISTS `koperasi_nuvibes`
-  CHARACTER SET utf8mb4
-  COLLATE utf8mb4_unicode_ci;
-
-USE `koperasi_nuvibes`;
+SET NAMES utf8mb4;
+SET CHARACTER SET utf8mb4;
 
 -- ============================================================
 -- TABEL: koperasi_info
@@ -27,13 +29,15 @@ CREATE TABLE IF NOT EXISTS `koperasi_info` (
   `nomor_badan_hukum` VARCHAR(100),
   `tanggal_berdiri` DATE,
   `logo` VARCHAR(255),
+  `tarif_simpanan_pokok` DECIMAL(15,2) DEFAULT 100000,
+  `tarif_simpanan_wajib` DECIMAL(15,2) DEFAULT 30000,
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
   `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-INSERT INTO `koperasi_info` (`nama_koperasi`, `alamat`, `nomor_telpon`, `email`, `tanggal_berdiri`) VALUES
-('Koperasi NU Vibes', 'Jl. Contoh No. 123', '021-12345678', 'info@nuvibes.com', '2020-01-01');
+INSERT INTO `koperasi_info` (`nama_koperasi`, `alamat`, `nomor_telpon`, `email`, `tanggal_berdiri`, `tarif_simpanan_pokok`, `tarif_simpanan_wajib`) VALUES
+('Koperasi NU Vibes', 'Jl. Contoh No. 123', '021-12345678', 'info@nuvibes.com', '2020-01-01', 100000, 30000);
 
 -- ============================================================
 -- TABEL: users
@@ -52,8 +56,10 @@ CREATE TABLE IF NOT EXISTS `users` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Password default: admin123 (bcrypt hash)
+-- Untuk ganti password, update kolom password dengan hash bcrypt baru
 INSERT INTO `users` (`username`, `password`, `nama_lengkap`, `role`, `hak_akses`, `status`) VALUES
-('admin', '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Administrator', 'Admin', 'all', 'aktif');
+('admin', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'Administrator', 'Admin', 'all', 'aktif');
+-- Note: Hash di atas = bcrypt('admin123')
 
 -- ============================================================
 -- TABEL: unit_usaha

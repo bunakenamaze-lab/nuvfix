@@ -228,6 +228,30 @@ window.renderBeranda = async function() {
       </div>
     </div>
     
+    <!-- Tagihan Anggota -->
+    <div class="card" style="margin-top: 30px;">
+      <div class="card-header">
+        <h3 class="card-title">
+          <i data-feather="alert-circle" style="width: 20px; height: 20px; margin-right: 8px; color: #FF6B6B;"></i>
+          Tagihan Simpanan Belum Dibayar
+        </h3>
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <input type="text" id="searchTagihan" placeholder="Cari nama / no. anggota..." 
+            style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; width: 250px; font-size: 14px;"
+            oninput="filterTagihan(this.value)">
+          <button class="btn btn-success" onclick="exportTagihan()">
+            <i data-feather="download"></i> Export
+          </button>
+          <button class="btn btn-secondary" onclick="window.loadTagihanWidget()">
+            <i data-feather="refresh-cw"></i> Refresh
+          </button>
+        </div>
+      </div>
+      <div id="tagihanWidget">
+        <div class="loading" style="padding: 40px; text-align: center;">Memuat data tagihan...</div>
+      </div>
+    </div>
+
     <!-- Activity Log -->
     <div class="card" style="margin-top: 30px;">
       <div class="card-header">
@@ -251,9 +275,241 @@ window.renderBeranda = async function() {
   window.renderSimpananChart();
   window.renderLabaRugiChart();
   
+  // Load tagihan anggota
+  window.loadTagihanWidget();
+
   // Load activity log
   window.loadRecentActivity();
 }
+
+// ===== TAGIHAN ANGGOTA WIDGET =====
+let allTagihanData = [];
+
+window.loadTagihanWidget = async function() {
+  const container = document.getElementById('tagihanWidget');
+  if (!container) return;
+
+  container.innerHTML = '<div class="loading" style="padding: 40px; text-align: center;">Memuat data tagihan...</div>';
+
+  try {
+    const result = await API.get('/api/tagihan/anggota');
+    allTagihanData = result.data || [];
+    renderTagihanTable(allTagihanData, result);
+  } catch (e) {
+    container.innerHTML = `<div style="padding: 20px; color: #c62828;">Gagal memuat data tagihan: ${e.message}</div>`;
+  }
+};
+
+function renderTagihanTable(data, summary) {
+  const container = document.getElementById('tagihanWidget');
+  if (!container) return;
+
+  if (data.length === 0) {
+    container.innerHTML = `
+      <div style="padding: 60px; text-align: center; color: #4CAF50;">
+        <i data-feather="check-circle" style="width: 56px; height: 56px; margin-bottom: 16px;"></i>
+        <h3 style="margin: 0;">Semua anggota sudah lunas!</h3>
+        <p style="color: #999; margin-top: 8px;">Tidak ada tagihan simpanan yang belum dibayar.</p>
+      </div>
+    `;
+    feather.replace();
+    return;
+  }
+
+  // Summary cards
+  const totalMenunggak = summary ? summary.total_anggota_menunggak : data.length;
+  const totalTagihan   = summary ? summary.total_tagihan_keseluruhan
+                                 : data.reduce((s, r) => s + r.total_tagihan, 0);
+  const totalPokok     = data.reduce((s, r) => s + r.tagihan_pokok, 0);
+  const totalWajib     = data.reduce((s, r) => s + r.tagihan_wajib, 0);
+
+  container.innerHTML = `
+    <!-- Summary cards -->
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; padding: 20px 20px 0;">
+      <div style="background: linear-gradient(135deg, #FF6B6B, #EE5A6F); color: white; padding: 20px; border-radius: 12px; text-align: center;">
+        <div style="font-size: 13px; opacity: 0.9; margin-bottom: 6px;">Anggota Menunggak</div>
+        <div style="font-size: 32px; font-weight: 700;">${totalMenunggak}</div>
+        <div style="font-size: 12px; opacity: 0.8; margin-top: 4px;">dari total anggota aktif</div>
+      </div>
+      <div style="background: linear-gradient(135deg, #FF9800, #F57C00); color: white; padding: 20px; border-radius: 12px; text-align: center;">
+        <div style="font-size: 13px; opacity: 0.9; margin-bottom: 6px;">Total Tagihan</div>
+        <div style="font-size: 22px; font-weight: 700;">${formatCurrency(totalTagihan)}</div>
+        <div style="font-size: 12px; opacity: 0.8; margin-top: 4px;">keseluruhan</div>
+      </div>
+      <div style="background: linear-gradient(135deg, #9C27B0, #7B1FA2); color: white; padding: 20px; border-radius: 12px; text-align: center;">
+        <div style="font-size: 13px; opacity: 0.9; margin-bottom: 6px;">Tagihan Simpanan Pokok</div>
+        <div style="font-size: 22px; font-weight: 700;">${formatCurrency(totalPokok)}</div>
+        <div style="font-size: 12px; opacity: 0.8; margin-top: 4px;">belum dibayar</div>
+      </div>
+      <div style="background: linear-gradient(135deg, #1976D2, #1565C0); color: white; padding: 20px; border-radius: 12px; text-align: center;">
+        <div style="font-size: 13px; opacity: 0.9; margin-bottom: 6px;">Tagihan Simpanan Wajib</div>
+        <div style="font-size: 22px; font-weight: 700;">${formatCurrency(totalWajib)}</div>
+        <div style="font-size: 12px; opacity: 0.8; margin-top: 4px;">belum dibayar</div>
+      </div>
+    </div>
+
+    <!-- Tabel -->
+    <div class="table-container" style="margin-top: 20px;">
+      <table>
+        <thead>
+          <tr>
+            <th>No.</th>
+            <th>No. Anggota</th>
+            <th>Nama Anggota</th>
+            <th>No. Telpon</th>
+            <th style="text-align: right;">Tagihan Pokok (Rp)</th>
+            <th style="text-align: right;">Tagihan Wajib (Rp)</th>
+            <th style="text-align: right;">Total Tagihan (Rp)</th>
+            <th style="text-align: center;">Status</th>
+            <th style="text-align: center;">Aksi</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${data.map((item, i) => `
+            <tr>
+              <td style="text-align: center;">${i + 1}</td>
+              <td><strong>${item.nomor_anggota}</strong></td>
+              <td>${item.nama_lengkap}</td>
+              <td>${item.nomor_telpon || '-'}</td>
+              <td style="text-align: right; color: ${item.tagihan_pokok > 0 ? '#c62828' : '#2e7d32'};">
+                ${item.tagihan_pokok > 0 ? formatCurrency(item.tagihan_pokok) : '<span style="color:#2e7d32;">Lunas</span>'}
+              </td>
+              <td style="text-align: right; color: ${item.tagihan_wajib > 0 ? '#c62828' : '#2e7d32'};">
+                ${item.tagihan_wajib > 0 ? formatCurrency(item.tagihan_wajib) : '<span style="color:#2e7d32;">Lunas</span>'}
+              </td>
+              <td style="text-align: right; font-weight: 700; color: #c62828;">
+                ${formatCurrency(item.total_tagihan)}
+              </td>
+              <td style="text-align: center;">
+                <span style="background: #FFEBEE; color: #c62828; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600;">
+                  Belum Lunas
+                </span>
+              </td>
+              <td style="text-align: center;">
+                <button class="btn btn-sm btn-info" onclick="lihatDetailTagihan(${item.id}, '${item.nama_lengkap}')" title="Detail">
+                  <i data-feather="eye"></i>
+                </button>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  feather.replace();
+}
+
+window.filterTagihan = function(keyword) {
+  if (!keyword) {
+    renderTagihanTable(allTagihanData, {
+      total_anggota_menunggak: allTagihanData.length,
+      total_tagihan_keseluruhan: allTagihanData.reduce((s, r) => s + r.total_tagihan, 0)
+    });
+    return;
+  }
+  const kw = keyword.toLowerCase();
+  const filtered = allTagihanData.filter(r =>
+    r.nama_lengkap.toLowerCase().includes(kw) ||
+    r.nomor_anggota.toLowerCase().includes(kw)
+  );
+  renderTagihanTable(filtered, {
+    total_anggota_menunggak: filtered.length,
+    total_tagihan_keseluruhan: filtered.reduce((s, r) => s + r.total_tagihan, 0)
+  });
+};
+
+window.exportTagihan = function() {
+  if (!allTagihanData.length) {
+    alert('Tidak ada data tagihan untuk diexport.');
+    return;
+  }
+
+  let csv = 'No.,No. Anggota,Nama Anggota,No. Telpon,Tagihan Pokok (Rp),Tagihan Wajib (Rp),Total Tagihan (Rp)\n';
+  allTagihanData.forEach((item, i) => {
+    csv += `${i + 1},"${item.nomor_anggota}","${item.nama_lengkap}","${item.nomor_telpon || ''}",${item.tagihan_pokok},${item.tagihan_wajib},${item.total_tagihan}\n`;
+  });
+
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = `tagihan-anggota-${new Date().toISOString().split('T')[0]}.csv`;
+  link.click();
+};
+
+window.lihatDetailTagihan = async function(anggotaId, namaAnggota) {
+  const modal = document.createElement('div');
+  modal.className = 'modal active';
+  modal.innerHTML = `
+    <div class="modal-content" style="max-width: 600px;">
+      <div class="modal-header">
+        <h3 class="modal-title">Detail Tagihan - ${namaAnggota}</h3>
+        <button class="modal-close" onclick="this.closest('.modal').remove()">×</button>
+      </div>
+      <div style="padding: 24px;" id="detailTagihanContent">
+        <div class="loading">Memuat detail...</div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  try {
+    const data = allTagihanData.find(r => r.id === anggotaId);
+    if (!data) throw new Error('Data tidak ditemukan');
+
+    document.getElementById('detailTagihanContent').innerHTML = `
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px;">
+        <div style="background: #f9f9f9; padding: 14px; border-radius: 8px;">
+          <div style="font-size: 12px; color: #999;">No. Anggota</div>
+          <div style="font-weight: 600;">${data.nomor_anggota}</div>
+        </div>
+        <div style="background: #f9f9f9; padding: 14px; border-radius: 8px;">
+          <div style="font-size: 12px; color: #999;">Tgl. Bergabung</div>
+          <div style="font-weight: 600;">${formatDate(data.tanggal_bergabung) || '-'}</div>
+        </div>
+        <div style="background: #f9f9f9; padding: 14px; border-radius: 8px;">
+          <div style="font-size: 12px; color: #999;">Sudah Bayar Pokok</div>
+          <div style="font-weight: 600; color: #2e7d32;">${formatCurrency(data.sudah_bayar_pokok)}</div>
+        </div>
+        <div style="background: #f9f9f9; padding: 14px; border-radius: 8px;">
+          <div style="font-size: 12px; color: #999;">Sudah Bayar Wajib</div>
+          <div style="font-weight: 600; color: #2e7d32;">${formatCurrency(data.sudah_bayar_wajib)}</div>
+        </div>
+        <div style="background: #f9f9f9; padding: 14px; border-radius: 8px;">
+          <div style="font-size: 12px; color: #999;">Kewajiban Wajib (${data.total_bulan_wajib} bulan × ${formatCurrency(data.tarif_wajib || 30000)})</div>
+          <div style="font-weight: 600;">${formatCurrency(data.total_bulan_wajib * (data.tarif_wajib || 30000))}</div>
+        </div>
+        <div style="background: #FFEBEE; padding: 14px; border-radius: 8px; border: 1px solid #FFCDD2;">
+          <div style="font-size: 12px; color: #999;">No. Telpon</div>
+          <div style="font-weight: 600;">${data.nomor_telpon || '-'}</div>
+        </div>
+      </div>
+
+      <div style="background: linear-gradient(135deg, #FF6B6B, #EE5A6F); color: white; padding: 20px; border-radius: 12px; text-align: center;">
+        <div style="font-size: 14px; opacity: 0.9;">Total Tagihan Belum Dibayar</div>
+        <div style="font-size: 32px; font-weight: 700; margin: 8px 0;">${formatCurrency(data.total_tagihan)}</div>
+        <div style="font-size: 13px; opacity: 0.8;">
+          Pokok: ${formatCurrency(data.tagihan_pokok)} + Wajib: ${formatCurrency(data.tagihan_wajib)}
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 10px; margin-top: 20px;">
+        <button class="btn btn-primary" style="flex: 1;"
+          onclick="loadPage('simpanan-pokok'); this.closest('.modal').remove();">
+          <i data-feather="plus"></i> Input Simpanan
+        </button>
+        <button class="btn btn-secondary" style="flex: 1;"
+          onclick="this.closest('.modal').remove();">
+          Tutup
+        </button>
+      </div>
+    `;
+    feather.replace();
+  } catch (e) {
+    document.getElementById('detailTagihanContent').innerHTML =
+      `<p style="color: red;">Error: ${e.message}</p>`;
+  }
+};
 
 window.renderSimpananChart = async function() {
   const ctx = document.getElementById('simpananChart');
@@ -436,6 +692,27 @@ window.renderInfoKoperasi = async function() {
           <i data-feather="upload"></i> Upload Logo Baru
         </button>
       </div>
+
+      <!-- Tarif Simpanan -->
+      <div style="margin-top: 24px; padding: 20px; background: linear-gradient(135deg, #E8F5E9, #F1F8E9); border-radius: 12px; border-left: 4px solid #2E7D32;">
+        <h4 style="color: #2E7D32; margin: 0 0 16px 0; display: flex; align-items: center; gap: 8px;">
+          <i data-feather="tag" style="width: 20px; height: 20px;"></i>
+          Tarif Simpanan
+        </h4>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Simpanan Pokok (sekali bayar)</label>
+            <p><strong style="font-size: 18px; color: #2E7D32;">${formatCurrency(info.tarif_simpanan_pokok || 100000)}</strong></p>
+          </div>
+          <div class="form-group">
+            <label>Simpanan Wajib (per bulan)</label>
+            <p><strong style="font-size: 18px; color: #2E7D32;">${formatCurrency(info.tarif_simpanan_wajib || 30000)}</strong></p>
+          </div>
+        </div>
+        <p style="color: #666; font-size: 13px; margin: 0;">
+          Tarif ini digunakan untuk menghitung tagihan anggota di dashboard. Klik "Edit Informasi" untuk mengubah tarif.
+        </p>
+      </div>
     </div>
   `;
   
@@ -554,6 +831,22 @@ window.editKoperasiInfo = async function() {
         <div class="form-group">
           <label>Logo</label>
           <input type="file" name="logo" accept="image/*">
+        </div>
+        
+        <div style="padding: 16px; background: #F1F8E9; border-radius: 8px; border-left: 3px solid #2E7D32; margin-bottom: 16px;">
+          <h4 style="margin: 0 0 12px 0; color: #2E7D32; font-size: 15px;">⚙️ Tarif Simpanan</h4>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Simpanan Pokok (Rp) — sekali bayar</label>
+              <input type="number" name="tarif_simpanan_pokok" value="${info.tarif_simpanan_pokok || 100000}" min="0" step="1000" placeholder="100000">
+              <small style="color: #888;">Digunakan untuk menghitung tagihan anggota</small>
+            </div>
+            <div class="form-group">
+              <label>Simpanan Wajib (Rp) — per bulan</label>
+              <input type="number" name="tarif_simpanan_wajib" value="${info.tarif_simpanan_wajib || 30000}" min="0" step="1000" placeholder="30000">
+              <small style="color: #888;">Digunakan untuk menghitung tagihan anggota</small>
+            </div>
+          </div>
         </div>
         
         <div class="btn-group">

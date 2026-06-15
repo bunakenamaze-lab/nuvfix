@@ -466,6 +466,10 @@ app.get('/api/koperasi-info', (req, res) => {
   });
 });
 
+// Tambahkan kolom tarif jika belum ada (migration)
+db.run(`ALTER TABLE koperasi_info ADD COLUMN tarif_simpanan_pokok REAL DEFAULT 100000`, () => {});
+db.run(`ALTER TABLE koperasi_info ADD COLUMN tarif_simpanan_wajib REAL DEFAULT 30000`, () => {});
+
 // ===== TAHUN PEMBUKUAN HISTORY ROUTES =====
 
 
@@ -473,7 +477,7 @@ app.put('/api/koperasi-info/:id', authenticateToken, upload.single('logo'), (req
   const { id } = req.params;
   const { 
     nama_koperasi, alamat, nomor_telpon, email, nomor_induk_koperasi, nomor_induk_berusaha, 
-    nomor_badan_hukum, tanggal_berdiri
+    nomor_badan_hukum, tanggal_berdiri, tarif_simpanan_pokok, tarif_simpanan_wajib
   } = req.body;
   const logo = req.file ? req.file.filename : null;
 
@@ -481,42 +485,17 @@ app.put('/api/koperasi-info/:id', authenticateToken, upload.single('logo'), (req
   let params = [];
 
   // Add fields dynamically if they exist
-  if (nama_koperasi !== undefined) {
-    query += ', nama_koperasi = ?';
-    params.push(nama_koperasi);
-  }
-  if (alamat !== undefined) {
-    query += ', alamat = ?';
-    params.push(alamat);
-  }
-  if (nomor_telpon !== undefined) {
-    query += ', nomor_telpon = ?';
-    params.push(nomor_telpon);
-  }
-  if (email !== undefined) {
-    query += ', email = ?';
-    params.push(email);
-  }
-  if (nomor_induk_koperasi !== undefined) {
-    query += ', nomor_induk_koperasi = ?';
-    params.push(nomor_induk_koperasi);
-  }
-  if (nomor_induk_berusaha !== undefined) {
-    query += ', nomor_induk_berusaha = ?';
-    params.push(nomor_induk_berusaha);
-  }
-  if (nomor_badan_hukum !== undefined) {
-    query += ', nomor_badan_hukum = ?';
-    params.push(nomor_badan_hukum);
-  }
-  if (tanggal_berdiri !== undefined) {
-    query += ', tanggal_berdiri = ?';
-    params.push(tanggal_berdiri);
-  }
-  if (logo) {
-    query += ', logo = ?';
-    params.push(logo);
-  }
+  if (nama_koperasi !== undefined) { query += ', nama_koperasi = ?'; params.push(nama_koperasi); }
+  if (alamat !== undefined)        { query += ', alamat = ?';        params.push(alamat); }
+  if (nomor_telpon !== undefined)  { query += ', nomor_telpon = ?';  params.push(nomor_telpon); }
+  if (email !== undefined)         { query += ', email = ?';         params.push(email); }
+  if (nomor_induk_koperasi !== undefined) { query += ', nomor_induk_koperasi = ?'; params.push(nomor_induk_koperasi); }
+  if (nomor_induk_berusaha !== undefined) { query += ', nomor_induk_berusaha = ?'; params.push(nomor_induk_berusaha); }
+  if (nomor_badan_hukum !== undefined)    { query += ', nomor_badan_hukum = ?';    params.push(nomor_badan_hukum); }
+  if (tanggal_berdiri !== undefined)      { query += ', tanggal_berdiri = ?';      params.push(tanggal_berdiri); }
+  if (tarif_simpanan_pokok !== undefined) { query += ', tarif_simpanan_pokok = ?'; params.push(parseFloat(tarif_simpanan_pokok) || 100000); }
+  if (tarif_simpanan_wajib !== undefined) { query += ', tarif_simpanan_wajib = ?'; params.push(parseFloat(tarif_simpanan_wajib) || 30000); }
+  if (logo) { query += ', logo = ?'; params.push(logo); }
 
   query += ' WHERE id = ?';
   params.push(id);
@@ -1036,6 +1015,75 @@ app.get('/api/public/stats', (req, res) => {
         
         console.log('Public stats:', stats);
         res.json(stats);
+      });
+    });
+  });
+});
+
+// ===== TAGIHAN ANGGOTA =====
+app.get('/api/tagihan/anggota', authenticateToken, (req, res) => {
+  const tahunSekarang = new Date().getFullYear();
+  const bulanSekarang = new Date().getMonth() + 1;
+
+  // Ambil tarif dari koperasi_info
+  db.get('SELECT tarif_simpanan_pokok, tarif_simpanan_wajib FROM koperasi_info LIMIT 1', [], (err, tarif) => {
+    const SIMPANAN_POKOK = (tarif && tarif.tarif_simpanan_pokok) ? parseFloat(tarif.tarif_simpanan_pokok) : 100000;
+    const SIMPANAN_WAJIB = (tarif && tarif.tarif_simpanan_wajib) ? parseFloat(tarif.tarif_simpanan_wajib) : 30000;
+
+    db.all(`
+      SELECT 
+        a.id, a.nomor_anggota, a.nama_lengkap, a.nomor_telpon, a.tanggal_bergabung,
+        COALESCE((
+          SELECT SUM(jumlah) FROM simpanan_pokok 
+          WHERE anggota_id = a.id AND (status = 'approved' OR status IS NULL)
+        ), 0) AS total_pokok_dibayar,
+        COALESCE((
+          SELECT SUM(jumlah) FROM simpanan_wajib 
+          WHERE anggota_id = a.id AND (status = 'approved' OR status IS NULL)
+        ), 0) AS total_wajib_dibayar,
+        CAST(strftime('%Y', COALESCE(a.tanggal_bergabung, a.created_at)) AS INTEGER) AS tahun_bergabung,
+        CAST(strftime('%m', COALESCE(a.tanggal_bergabung, a.created_at)) AS INTEGER) AS bulan_bergabung
+      FROM anggota a
+      WHERE a.status = 'aktif'
+      ORDER BY a.nomor_anggota ASC
+    `, [], (err, anggotaList) => {
+      if (err) return res.status(500).json({ error: err.message });
+
+      const result = anggotaList.map(a => {
+        const tBergabung = a.tahun_bergabung || tahunSekarang;
+        const bBergabung = a.bulan_bergabung || 1;
+        const totalBulanWajib = Math.max(0,
+          (tahunSekarang - tBergabung) * 12 + (bulanSekarang - bBergabung + 1)
+        );
+        const kewajibanWajib  = totalBulanWajib * SIMPANAN_WAJIB;
+        const tagihanPokok    = a.total_pokok_dibayar >= SIMPANAN_POKOK ? 0 : SIMPANAN_POKOK - a.total_pokok_dibayar;
+        const tagihanWajib    = Math.max(0, kewajibanWajib - a.total_wajib_dibayar);
+        const totalTagihan    = tagihanPokok + tagihanWajib;
+
+        return {
+          id: a.id,
+          nomor_anggota: a.nomor_anggota,
+          nama_lengkap: a.nama_lengkap,
+          nomor_telpon: a.nomor_telpon,
+          tanggal_bergabung: a.tanggal_bergabung,
+          tagihan_pokok: tagihanPokok,
+          tagihan_wajib: tagihanWajib,
+          total_tagihan: totalTagihan,
+          sudah_bayar_pokok: parseFloat(a.total_pokok_dibayar),
+          sudah_bayar_wajib: parseFloat(a.total_wajib_dibayar),
+          total_bulan_wajib: totalBulanWajib,
+          tarif_pokok: SIMPANAN_POKOK,
+          tarif_wajib: SIMPANAN_WAJIB
+        };
+      });
+
+      const adaTagihan = result.filter(r => r.total_tagihan > 0);
+      res.json({
+        data: adaTagihan,
+        total_anggota_menunggak: adaTagihan.length,
+        total_tagihan_keseluruhan: adaTagihan.reduce((s, r) => s + r.total_tagihan, 0),
+        tarif_pokok: SIMPANAN_POKOK,
+        tarif_wajib: SIMPANAN_WAJIB
       });
     });
   });
